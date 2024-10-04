@@ -372,27 +372,47 @@ const SONIC_TESTNET_PARAMS = {
     rpcUrls: ['https://rpc.testnet.soniclabs.com'],
     blockExplorerUrls: ['https://explorer.testnet.soniclabs.com/']
 };
-
 async function switchToSonicTestnet() {
     try {
+        // Сначала пробуем переключиться на существующую сеть
         await window.ethereum.request({
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: SONIC_TESTNET_PARAMS.chainId }],
         });
+        console.log("Successfully switched to Sonic Testnet");
     } catch (switchError) {
-        // Этот error code означает, что сеть еще не добавлена в MetaMask
+        console.log("Error switching chain:", switchError);
+        // Если сеть не существует, пробуем добавить ее
         if (switchError.code === 4902) {
             try {
                 await window.ethereum.request({
                     method: 'wallet_addEthereumChain',
                     params: [SONIC_TESTNET_PARAMS],
                 });
+                console.log("Successfully added Sonic Testnet");
             } catch (addError) {
+                console.error("Error adding Sonic Testnet:", addError);
+                // Если не удалось автоматически добавить сеть, предоставляем инструкции пользователю
+                const message = `
+                    Unable to automatically add Sonic Testnet. Please add it manually with these parameters:
+                    Network Name: ${SONIC_TESTNET_PARAMS.chainName}
+                    New RPC URL: ${SONIC_TESTNET_PARAMS.rpcUrls[0]}
+                    Chain ID: ${parseInt(SONIC_TESTNET_PARAMS.chainId)}
+                    Currency Symbol: ${SONIC_TESTNET_PARAMS.nativeCurrency.symbol}
+                    Block Explorer URL: ${SONIC_TESTNET_PARAMS.blockExplorerUrls[0]}
+                `;
+                alert(message);
                 throw new Error("Failed to add Sonic Testnet: " + addError.message);
             }
         } else {
             throw new Error("Failed to switch to Sonic Testnet: " + switchError.message);
         }
+    }
+
+    // Дополнительная проверка после переключения/добавления сети
+    const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+    if (currentChainId !== SONIC_TESTNET_PARAMS.chainId) {
+        throw new Error(`Network switch failed. Current chain ID: ${currentChainId}, Expected: ${SONIC_TESTNET_PARAMS.chainId}`);
     }
 }
 
