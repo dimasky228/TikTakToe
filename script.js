@@ -296,13 +296,12 @@ async function connectWallet() {
         console.log("MetaMask is installed");
         try {
             console.log("Requesting accounts...");
-            const accounts = await Promise.race([
-                window.ethereum.request({ method: 'eth_requestAccounts' }),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Timeout')), 10000)
-                )
-            ]);
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
             console.log("Accounts received:", accounts);
+            
+            // Переключаемся на Sonic Testnet
+            await switchToSonicTestnet();
+            
             web3 = new Web3(window.ethereum);
             userAccount = accounts[0];
             console.log("User account:", userAccount);
@@ -322,12 +321,8 @@ async function connectWallet() {
             await checkGameState();
             listenToEvents();
         } catch (error) {
-            console.error("Error requesting accounts:", error);
-            if (error.message === 'Timeout') {
-                statusEl.textContent = 'Connection request timed out. Please try again.';
-            } else {
-                statusEl.textContent = 'Failed to connect wallet: ' + error.message;
-            }
+            console.error("Error connecting wallet:", error);
+            statusEl.textContent = 'Failed to connect wallet: ' + error.message;
         }
     } else {
         console.log("MetaMask is not installed, trying WalletConnect");
@@ -366,11 +361,50 @@ async function connectWallet() {
         }
     }
 }
+const SONIC_TESTNET_PARAMS = {
+    chainId: '0xFA85', // 64165 в шестнадцатеричном формате
+    chainName: 'Sonic Testnet',
+    nativeCurrency: {
+        name: 'S',
+        symbol: 'S',
+        decimals: 18
+    },
+    rpcUrls: ['https://rpc.testnet.soniclabs.com'],
+    blockExplorerUrls: ['https://explorer.testnet.soniclabs.com/']
+};
+
+async function switchToSonicTestnet() {
+    try {
+        await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: SONIC_TESTNET_PARAMS.chainId }],
+        });
+    } catch (switchError) {
+        // Этот error code означает, что сеть еще не добавлена в MetaMask
+        if (switchError.code === 4902) {
+            try {
+                await window.ethereum.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [SONIC_TESTNET_PARAMS],
+                });
+            } catch (addError) {
+                throw new Error("Failed to add Sonic Testnet: " + addError.message);
+            }
+        } else {
+            throw new Error("Failed to switch to Sonic Testnet: " + switchError.message);
+        }
+    }
+}
 
 async function updateBalance() {
-    const balance = await web3.eth.getBalance(userAccount);
-    const balanceInS = web3.utils.fromWei(balance, 'ether');
-    balanceEl.textContent = `Balance: ${balanceInS} S`;
+    try {
+        const balance = await web3.eth.getBalance(userAccount);
+        const balanceInS = web3.utils.fromWei(balance, 'ether');
+        balanceEl.textContent = `Balance: ${parseFloat(balanceInS).toFixed(4)} S`;
+    } catch (error) {
+        console.error("Error updating balance:", error);
+        balanceEl.textContent = "Error fetching balance";
+    }
 }
 
 async function checkGameState() {
