@@ -1,3 +1,21 @@
+let ethereum;
+let web3;
+let contract;
+let userAccount;
+let gameActive = false;
+
+const SONIC_TESTNET_PARAMS = {
+    chainId: '0xFAA5', // 64165 в шестнадцатеричном формате
+    chainName: 'Sonic Testnet',
+    nativeCurrency: {
+        name: 'S',
+        symbol: 'S',
+        decimals: 18
+    },
+    rpcUrls: ['https://rpc.testnet.soniclabs.com'],
+    blockExplorerUrls: ['https://testnet.soniclabs.com']
+};
+
 const contractAddress = '0x84c7c3586f1c5856970ba926af32bbe45654f95c';
 const contractABI = [
 	{
@@ -271,12 +289,6 @@ const contractABI = [
 	}
         ];
 
-
-let web3;
-let contract;
-let userAccount;
-let gameActive = false;
-
 const statusEl = document.getElementById('status');
 const balanceEl = document.getElementById('balance');
 const connectWalletBtn = document.getElementById('connectWallet');
@@ -288,25 +300,74 @@ connectWalletBtn.addEventListener('click', connectWallet);
 startGameBtn.addEventListener('click', startGame);
 joinGameBtn.addEventListener('click', joinGame);
 
+function getEthereum() {
+    if (typeof window.ethereum !== 'undefined') {
+        return window.ethereum;
+    } else if (typeof window.web3 !== 'undefined') {
+        return window.web3.currentProvider;
+    }
+    return null;
+}
+
+function isMetaMaskInstalled() {
+    ethereum = getEthereum();
+    return ethereum !== null;
+}
+
+async function switchToSonicTestnet() {
+    try {
+        await ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: SONIC_TESTNET_PARAMS.chainId }],
+        });
+        console.log("Successfully switched to Sonic Testnet");
+    } catch (switchError) {
+        console.log("Error switching chain:", switchError);
+        if (switchError.code === 4902) {
+            try {
+                await ethereum.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [SONIC_TESTNET_PARAMS],
+                });
+                console.log("Successfully added Sonic Testnet");
+            } catch (addError) {
+                console.error("Error adding Sonic Testnet:", addError);
+                const message = `
+                    Unable to automatically add Sonic Testnet. Please add it manually with these parameters:
+                    Network Name: ${SONIC_TESTNET_PARAMS.chainName}
+                    New RPC URL: ${SONIC_TESTNET_PARAMS.rpcUrls[0]}
+                    Chain ID: ${parseInt(SONIC_TESTNET_PARAMS.chainId, 16)}
+                    Currency Symbol: ${SONIC_TESTNET_PARAMS.nativeCurrency.symbol}
+                    Block Explorer URL: ${SONIC_TESTNET_PARAMS.blockExplorerUrls[0]}
+                `;
+                alert(message);
+                throw new Error("Failed to add Sonic Testnet: " + addError.message);
+            }
+        } else {
+            throw new Error("Failed to switch to Sonic Testnet: " + switchError.message);
+        }
+    }
+}
+
 async function connectWallet() {
     console.log("Connect Wallet button clicked");
     statusEl.textContent = "Attempting to connect wallet...";
     
-    if (typeof window.ethereum !== 'undefined') {
+    if (isMetaMaskInstalled()) {
         console.log("MetaMask is installed");
         try {
             console.log("Requesting accounts...");
-            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
             console.log("Accounts received:", accounts);
             
-            // Переключаемся на Sonic Testnet
+            console.log("Switching to Sonic Testnet...");
             await switchToSonicTestnet();
             
-            web3 = new Web3(window.ethereum);
+            web3 = new Web3(ethereum);
             userAccount = accounts[0];
             console.log("User account:", userAccount);
             
-            // Инициализация контракта
+            console.log("Initializing contract...");
             contract = new web3.eth.Contract(contractABI, contractAddress);
             console.log("Contract instance created");
             
@@ -316,12 +377,11 @@ async function connectWallet() {
             joinGameBtn.disabled = false;
             console.log("Wallet connected successfully");
 
-            // После успешного подключения:
             await updateBalance();
             await checkGameState();
             listenToEvents();
         } catch (error) {
-            console.error("Error connecting wallet:", error);
+            console.error("Error in MetaMask connection process:", error);
             statusEl.textContent = 'Failed to connect wallet: ' + error.message;
         }
     } else {
@@ -341,7 +401,6 @@ async function connectWallet() {
             userAccount = accounts[0];
             console.log("User account:", userAccount);
             
-            // Инициализация контракта
             contract = new web3.eth.Contract(contractABI, contractAddress);
             console.log("Contract instance created");
             
@@ -351,7 +410,6 @@ async function connectWallet() {
             joinGameBtn.disabled = false;
             console.log("Wallet connected successfully via WalletConnect");
 
-            // После успешного подключения:
             await updateBalance();
             await checkGameState();
             listenToEvents();
@@ -359,60 +417,6 @@ async function connectWallet() {
             console.error("Error connecting via WalletConnect:", error);
             statusEl.textContent = 'Failed to connect wallet: ' + error.message;
         }
-    }
-}
-const SONIC_TESTNET_PARAMS = {
-    chainId: '0xFA85', // 64165 в шестнадцатеричном формате
-    chainName: 'Sonic Testnet',
-    nativeCurrency: {
-        name: 'S',
-        symbol: 'S',
-        decimals: 18
-    },
-    rpcUrls: ['https://rpc.testnet.soniclabs.com'],
-    blockExplorerUrls: ['https://explorer.testnet.soniclabs.com/']
-};
-async function switchToSonicTestnet() {
-    try {
-        // Сначала пробуем переключиться на существующую сеть
-        await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: SONIC_TESTNET_PARAMS.chainId }],
-        });
-        console.log("Successfully switched to Sonic Testnet");
-    } catch (switchError) {
-        console.log("Error switching chain:", switchError);
-        // Если сеть не существует, пробуем добавить ее
-        if (switchError.code === 4902) {
-            try {
-                await window.ethereum.request({
-                    method: 'wallet_addEthereumChain',
-                    params: [SONIC_TESTNET_PARAMS],
-                });
-                console.log("Successfully added Sonic Testnet");
-            } catch (addError) {
-                console.error("Error adding Sonic Testnet:", addError);
-                // Если не удалось автоматически добавить сеть, предоставляем инструкции пользователю
-                const message = `
-                    Unable to automatically add Sonic Testnet. Please add it manually with these parameters:
-                    Network Name: ${SONIC_TESTNET_PARAMS.chainName}
-                    New RPC URL: ${SONIC_TESTNET_PARAMS.rpcUrls[0]}
-                    Chain ID: ${parseInt(SONIC_TESTNET_PARAMS.chainId)}
-                    Currency Symbol: ${SONIC_TESTNET_PARAMS.nativeCurrency.symbol}
-                    Block Explorer URL: ${SONIC_TESTNET_PARAMS.blockExplorerUrls[0]}
-                `;
-                alert(message);
-                throw new Error("Failed to add Sonic Testnet: " + addError.message);
-            }
-        } else {
-            throw new Error("Failed to switch to Sonic Testnet: " + switchError.message);
-        }
-    }
-
-    // Дополнительная проверка после переключения/добавления сети
-    const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
-    if (currentChainId !== SONIC_TESTNET_PARAMS.chainId) {
-        throw new Error(`Network switch failed. Current chain ID: ${currentChainId}, Expected: ${SONIC_TESTNET_PARAMS.chainId}`);
     }
 }
 
@@ -471,32 +475,7 @@ async function startGame() {
 async function joinGame() {
     try {
         const stake = await contract.methods.getStake().call();
-        console.log("Required stake:", web3.utils.fromWei(stake, 'ether'), "S");
-
-        const gasEstimate = await contract.methods.joinGame().estimateGas({from: userAccount, value: stake});
-        console.log("Estimated gas:", gasEstimate);
-
-        const gasPrice = await web3.eth.getGasPrice();
-        console.log("Current gas price:", web3.utils.fromWei(gasPrice, 'gwei'), "gwei");
-
-        const totalCost = web3.utils.toBN(stake).add(web3.utils.toBN(gasEstimate).mul(web3.utils.toBN(gasPrice)));
-        console.log("Total estimated cost:", web3.utils.fromWei(totalCost, 'ether'), "S");
-
-        const balance = await web3.eth.getBalance(userAccount);
-        console.log("Your balance:", web3.utils.fromWei(balance, 'ether'), "S");
-
-        if (web3.utils.toBN(balance).lt(web3.utils.toBN(totalCost))) {
-            throw new Error("Insufficient balance to cover stake and gas costs");
-        }
-
-        const transaction = await contract.methods.joinGame().send({
-            from: userAccount,
-            value: stake,
-            gas: Math.floor(gasEstimate * 1.2), // Увеличиваем лимит газа на 20%
-            gasPrice: gasPrice
-        });
-
-        console.log("Transaction successful:", transaction.transactionHash);
+        await contract.methods.joinGame().send({ from: userAccount, value: stake });
         gameActive = true;
         createBoard();
         statusEl.textContent = "Joined the game. Waiting for your turn...";
@@ -574,7 +553,7 @@ function listenToEvents() {
             await checkGameState();
         });
 
-    contract.events.MoveMade()
+        contract.events.MoveMade()
         .on('data', async (event) => {
             console.log("Move made:", event.returnValues);
             await updateBoard();
